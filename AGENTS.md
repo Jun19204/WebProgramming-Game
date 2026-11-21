@@ -47,3 +47,5 @@ F-22 paint/radome pass supersedes earlier camouflage notes (refs: Wikimedia USAF
 Chase camera: offset (0,6.5,29)/1.5 plus zoom 1.2 (user asked +25% over the earlier 20% framing). Render-only; cockpit and lobby unchanged.
 
 Exhaust (render-only, View.plumeMaterial/updatePlume): per nozzle an additive open-tube ShaderMaterial plume from local z 8.05 with pink-violet shock diamonds every 1.75 m over a faint lilac glow, flattened for the 2D nozzle (scale .5/.25), plus a glowing core quad at z 8.12. Power eases toward speed within min/max (lobby .55); length 4.5+8*power. One plume/core material per aircraft, disposed in View.clear. Old cone flame removed. Offline checks 45/45.
+
+Mission time limit is 300 s (5:00), changed from 360 at the user's request; index.html timer/briefing and README match.
