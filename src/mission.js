@@ -93,6 +93,8 @@
         bank: 0,
         speed: enemy ? 145 : C.speed,
         fire: 2 + index,
+        ctrl: { pitch: 0, roll: 0, yaw: 0 },
+        stick: { pitch: 0, roll: 0, yaw: 0 },
         prev: p.clone(),
         prevQ: Q()
       };
@@ -211,15 +213,21 @@
       }
       const av = b.angvel(),
         hardTurn = e === this.player && Math.abs(e.bank) > 0.8 ? 3 : 1;
-      b.resetTorques(true);
-      b.addTorque(
-        {
-          x: error.x * 900000 - av.x * 350000,
-          y: error.y * 900000 * hardTurn - av.y * 350000 * Math.sqrt(hardTurn),
-          z: error.z * 340000 - av.z * 100000
-        },
-        true
+      const torque = V(
+        error.x * 900000 - av.x * 350000,
+        error.y * 900000 * hardTurn - av.y * 350000 * Math.sqrt(hardTurn),
+        error.z * 340000 - av.z * 100000
       );
+      b.resetTorques(true);
+      b.addTorque(torque, true);
+      // Render-only control-surface demand: pilot stick plus the remaining
+      // attitude error in body axes (positive = nose up, roll right, nose right).
+      const local = V(error.x, error.y, error.z).applyQuaternion(q.invert()),
+        clamp = S.math.clamp,
+        stick = e.stick;
+      e.ctrl.pitch = clamp(stick.pitch * 0.75 + local.x * 2.5, -1, 1);
+      e.ctrl.roll = clamp(stick.roll * 0.75 - local.z * 2.5, -1, 1);
+      e.ctrl.yaw = clamp(stick.yaw * 0.75 - local.y * 4, -1, 1);
       const dir = forward(e),
         vel = b.linvel(),
         mass = b.mass(),
@@ -395,6 +403,9 @@
       p.yaw = S.math.wrap(p.yaw - (turn * 0.43 + yaw * 0.65) * dt);
       p.bank = -turn * 0.72 - yaw * 0.18;
       p.pitch = pitch * 0.57;
+      p.stick.pitch = pitch;
+      p.stick.roll = turn;
+      p.stick.yaw = yaw;
     }
     stepDebrief(dt, keys) {
       if (this.status !== 'victory' || !this.player.alive) return;
