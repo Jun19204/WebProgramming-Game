@@ -6,6 +6,7 @@
     C = S.config;
   const V = (x = 0, y = 0, z = 0) => new T.Vector3(x, y, z),
     Q = () => new T.Quaternion();
+  const RATE_GAIN = { x: 2000000, y: 2000000, z: 1000000 };
   const forward = (e) => V(0, 0, -1).applyQuaternion(e.body.rotation());
   S.islands = [
     [-2300, 0, -1800, 1],
@@ -203,7 +204,9 @@
     fly(e, dt) {
       const b = e.body,
         q = Q().copy(b.rotation()),
-        desired = Q().setFromEuler(new T.Euler(e.pitch, e.yaw, e.bank, 'YXZ'));
+        desired = e.rates
+          ? q.clone()
+          : Q().setFromEuler(new T.Euler(e.pitch, e.yaw, e.bank, 'YXZ'));
       const error = desired.multiply(q.clone().invert());
       if (error.w < 0) {
         error.x *= -1;
@@ -212,12 +215,24 @@
         error.w *= -1;
       }
       const av = b.angvel(),
-        hardTurn = e === this.player && Math.abs(e.bank) > 0.8 ? 3 : 1;
-      const torque = V(
-        error.x * 900000 - av.x * 350000,
-        error.y * 900000 * hardTurn - av.y * 350000 * Math.sqrt(hardTurn),
-        error.z * 340000 - av.z * 100000
-      );
+        hardTurn =
+          e === this.player && (e.rates ? e.hardTurn : Math.abs(e.bank) > 0.8) ? 3 : 1;
+      let torque;
+      if (e.rates) {
+        // Manual flight: body-rate command, zero stick holds the current attitude.
+        const w = V(av.x, av.y, av.z).applyQuaternion(q.clone().invert()),
+          r = e.rates;
+        torque = V(
+          (r.x - w.x) * RATE_GAIN.x,
+          (r.y - w.y) * RATE_GAIN.y * Math.sqrt(hardTurn),
+          (r.z - w.z) * RATE_GAIN.z
+        ).applyQuaternion(q);
+      } else
+        torque = V(
+          error.x * 900000 - av.x * 350000,
+          error.y * 900000 * hardTurn - av.y * 350000 * Math.sqrt(hardTurn),
+          error.z * 340000 - av.z * 100000
+        );
       b.resetTorques(true);
       b.addTorque(torque, true);
       // Render-only control-surface demand: pilot stick plus the remaining
@@ -400,12 +415,26 @@
         C.minSpeed,
         C.maxSpeed
       );
-      p.yaw = S.math.wrap(p.yaw - (turn * 0.43 + yaw * 0.65) * dt);
-      p.bank = -turn * 0.72 - yaw * 0.18;
-      p.pitch = pitch * 0.57;
       p.stick.pitch = pitch;
       p.stick.roll = turn;
       p.stick.yaw = yaw;
+      if (S.settings.assist === false) {
+        const q = Q().copy(p.body.rotation()),
+          att = new T.Euler().setFromQuaternion(q, 'YXZ');
+        p.hardTurn = turn !== 0 && turn === yaw;
+        // Body rates in rad/s (+x nose up, +y nose left, +z roll left) plus a small
+        // lift-driven heading change while banked, like a coordinated turn.
+        const lift = V(0, Math.sin(att.z) * Math.cos(att.x) * 0.3, 0).applyQuaternion(q.invert());
+        p.rates = V(pitch * 0.85, -yaw * (p.hardTurn ? 0.6 : 0.35), -turn * 1.7).add(lift);
+        p.pitch = att.x;
+        p.yaw = att.y;
+        p.bank = att.z;
+        return;
+      }
+      p.rates = null;
+      p.yaw = S.math.wrap(p.yaw - (turn * 0.43 + yaw * 0.65) * dt);
+      p.bank = -turn * 0.72 - yaw * 0.18;
+      p.pitch = pitch * 0.57;
     }
     stepDebrief(dt, keys) {
       if (this.status !== 'victory' || !this.player.alive) return;

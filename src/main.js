@@ -154,7 +154,7 @@
   document
     .querySelectorAll('[data-close]')
     .forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
-  for (const name of ['volume', 'musicVolume', 'mute', 'shake']) {
+  for (const name of ['volume', 'musicVolume', 'mute', 'shake', 'assist']) {
     const input = $(name);
     if (name === 'volume' || name === 'musicVolume') input.value = S.settings[name] * 100;
     else input.checked = S.settings[name];

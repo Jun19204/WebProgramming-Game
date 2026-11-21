@@ -14,6 +14,8 @@ Single-player F-22A air-combat game. Destroy 5 enemies within 300 s (5:00). Scre
 ## Controls
 Arrow-up climb, arrow-down dive, A/D bank, Left/Right yaw, W/S throttle, Space gun, Shift missile, Tab target, F flare, C chase/cockpit (only while playing, no autorepeat), Escape pause. Focus loss pauses and clears input; focus return never auto-resumes. A+Left / D+Right hard turn increases actual yaw torque (never sets pose).
 
+Settings toggle 자세 자동 복귀 (S.settings.assist, default on, persisted): on = original assist (keys set target pitch/bank, release returns level). Off = manual flight like Ace Combat without auto-level: controlPlayer sets p.rates (body rad/s: pitch .85, yaw .35 / .6 on hard turn, roll 1.7, plus a small lift-driven heading change while banked) and Mission.fly applies a body-rate torque controller (RATE_GAIN) so zero stick holds attitude; loops and continuous rolls work. Still forces/torques only; enemies always use the assist path. Can be changed while paused.
+
 ## Simulation
 - Rapier dynamic rigid bodies integrate aircraft pose from forces and torques at a fixed timestep (1/60, max 6 steps). Rendering interpolates snapshots and never writes body pose. Keep resource limits in src/config.js.
 - Island meshes and colliders use the same geometry. Dispose the old world on restart.
