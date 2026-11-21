@@ -1227,6 +1227,14 @@ dl {
   padding: 23px 0;
   color: #d2e2ec;
 }
+.setting-text small {
+  display: block;
+  margin-top: 6px;
+  color: #8fa9ba;
+  font-size: 11.5px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
 .setting input[type='range'] {
   width: 43%;
   cursor: pointer;

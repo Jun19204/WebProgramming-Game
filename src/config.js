@@ -34,7 +34,8 @@
     volume: 0.35,
     musicVolume: 0.35,
     shake: !matchMedia('(prefers-reduced-motion: reduce)').matches,
-    mute: false
+    mute: false,
+    assist: true
   };
   try {
     const v = JSON.parse(localStorage.getItem('sky-strike-settings') || 'null');
@@ -44,6 +45,7 @@
       if (Number.isFinite(v.volume)) S.settings.volume = S.math.clamp(v.volume, 0, 1);
       if (typeof v.shake === 'boolean') S.settings.shake = v.shake;
       if (typeof v.mute === 'boolean') S.settings.mute = v.mute;
+      if (typeof v.assist === 'boolean') S.settings.assist = v.assist;
     }
   } catch (_) {
     /* Storage may be disabled for file URLs. */
