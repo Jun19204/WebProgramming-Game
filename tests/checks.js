@@ -216,8 +216,9 @@
         models: data.models,
         scene: new T.Scene(),
         entityMeshes: new Map(),
-        flameGeo: new T.BoxGeometry(),
-        flameMat: new T.MeshBasicMaterial(),
+        plumeGeo: new T.BoxGeometry(),
+        coreGeo: new T.PlaneGeometry(),
+        plumeMaterial: S.View.prototype.plumeMaterial,
         hingeAxis: new T.Vector3(1, 0, 0),
         hingeTurn: new T.Quaternion()
       };
@@ -253,9 +254,18 @@
       assert(d[find('rudder', true)].x > 0.15 && d[find('rudder', false)].x > 0.15, '기수 오른쪽: 방향타 뒷전 우측 아님');
       d = moved({ pitch: 0, roll: 0, yaw: 0 });
       assert(d.every((v) => v.length() < 1e-3), '중립 복귀 실패');
-      fake.flameGeo.dispose();
-      fake.flameMat.dispose();
-      return '수평꼬리 2 · 에일러론 2 · 플래퍼론 2 · 방향타 2';
+      // Exhaust plumes: two, longer and brighter at higher speed, render-only.
+      const u = g.userData.plume;
+      assert(u && u.nodes.length === 2, '배기 화염 ' + (u ? u.nodes.length : 0) + '개');
+      for (let k = 0; k < 100; k++) S.View.prototype.updatePlume.call(fake, g, { speed: S.config.minSpeed }, false, 0.05, k);
+      const slow = u.nodes[0].scale.z;
+      for (let k = 0; k < 100; k++) S.View.prototype.updatePlume.call(fake, g, { speed: S.config.maxSpeed }, false, 0.05, k);
+      assert(u.nodes[0].scale.z > slow + 6 && u.mat.uniforms.uPower.value > 0.95, '배기 화염 출력 반영 안 됨');
+      u.mat.dispose();
+      u.core.dispose();
+      fake.plumeGeo.dispose();
+      fake.coreGeo.dispose();
+      return '수평꼬리 2 · 에일러론 2 · 플래퍼론 2 · 방향타 2 · 배기 화염 2';
     });
     await check('4회 재시작 자원 초기화', () => {
       for (let i = 0; i < 4; i++) {

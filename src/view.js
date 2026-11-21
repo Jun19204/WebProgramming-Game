@@ -93,15 +93,11 @@
       });
       this.gunGeo = new T.BoxGeometry(0.45, 0.45, 15);
       this.gunMat = new T.MeshBasicMaterial({ color: 0xffd5a0 });
-      this.flameGeo = new T.ConeGeometry(0.7, 5, 8);
-      this.flameGeo.rotateX(Math.PI / 2);
-      this.flameMat = new T.MeshBasicMaterial({
-        color: 0x97beff,
-        transparent: true,
-        opacity: 0.48,
-        depthWrite: false,
-        blending: T.AdditiveBlending
-      });
+      // Unit exhaust plume: open tube from z=0 (nozzle) to z=1 (tail end).
+      this.plumeGeo = new T.CylinderGeometry(1, 1, 1, 20, 64, true);
+      this.plumeGeo.translate(0, 0.5, 0);
+      this.plumeGeo.rotateX(Math.PI / 2);
+      this.coreGeo = new T.PlaneGeometry(1, 1);
       this.readyCamera = false;
       this.renderer.toneMappingExposure = 0.95;
       this.scene.background.set('#9bb5c5');
@@ -192,7 +188,13 @@
       this.camera.updateProjectionMatrix();
     }
     clear() {
-      for (const mesh of this.entityMeshes.values()) this.scene.remove(mesh);
+      for (const mesh of this.entityMeshes.values()) {
+        this.scene.remove(mesh);
+        if (mesh.userData.plume) {
+          mesh.userData.plume.mat.dispose();
+          mesh.userData.plume.core.dispose();
+        }
+      }
       this.entityMeshes.clear();
       for (const m of this.shots) this.scene.remove(m);
       for (const m of this.effects) this.scene.remove(m);
@@ -225,15 +227,97 @@
         if (match)
           g.userData.surfaces.push({ node: o, kind: match[1], right: match[2] === 'R', base: o.quaternion.clone() });
       });
+      const plumeMat = this.plumeMaterial();
+      const coreMat = new T.ShaderMaterial({
+        uniforms: { uPower: { value: 0.4 } },
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        // Hot glow seen looking into the nozzle exit from behind.
+        fragmentShader: `uniform float uPower; varying vec2 vUv;
+          void main() {
+            vec2 q = (vUv - 0.5) * 2.0;
+            float g = pow(max(0.0, 1.0 - length(q * vec2(1.0, 1.15))), 1.8);
+            vec3 c = mix(vec3(0.75, 0.42, 0.85), vec3(1.0, 0.72, 0.8), g) * g * (0.45 + 1.1 * uPower);
+            gl_FragColor = vec4(c, 1.0);
+          }`,
+        transparent: true,
+        depthWrite: false,
+        side: T.DoubleSide,
+        blending: T.AdditiveBlending
+      });
+      g.userData.plume = { mat: plumeMat, core: coreMat, power: 0.4, nodes: [] };
       for (const x of [-0.98, 0.98]) {
-        const f = new T.Mesh(this.flameGeo, this.flameMat);
-        f.position.set(x, 0, 9.15);
-        f.scale.set(0.75, 0.36, 0.35);
+        const f = new T.Mesh(this.plumeGeo, plumeMat);
+        // Starts just inside the 2D nozzle exit; flattened like its rectangular throat.
+        f.position.set(x, 0, 8.05);
+        f.renderOrder = 2;
+        f.frustumCulled = false;
         g.add(f);
+        g.userData.plume.nodes.push(f);
+        const core = new T.Mesh(this.coreGeo, coreMat);
+        core.position.set(x, 0, 8.12);
+        core.scale.set(1.3, 0.5, 1);
+        core.renderOrder = 2;
+        g.add(core);
       }
       this.scene.add(g);
       this.entityMeshes.set(e, g);
       return g;
+    }
+    plumeMaterial() {
+      return new T.ShaderMaterial({
+        uniforms: { uPower: { value: 0.4 }, uLength: { value: 8 }, uTime: { value: 0 } },
+        vertexShader: `
+          uniform float uPower; uniform float uLength; uniform float uTime;
+          varying float vT; varying vec3 vN; varying vec3 vV;
+          float diamond(float d) { return pow(0.5 + 0.5 * cos(6.2832 * (d - 0.55) / 1.75), 6.0); }
+          void main() {
+            vT = position.z;
+            float d = position.z * uLength;
+            // Slight expansion, narrowing tail and pinches at each shock diamond.
+            float r = mix(1.0, 0.55, vT) * (1.0 + 0.25 * smoothstep(0.0, 0.12, vT))
+              * (1.0 - 0.16 * diamond(d) * (1.0 - vT));
+            vec3 p = vec3(position.xy * r, position.z);
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            vN = normalize(normalMatrix * vec3(normal.xy, 0.0));
+            vV = -mv.xyz;
+            gl_Position = projectionMatrix * mv;
+          }`,
+        fragmentShader: `
+          uniform float uPower; uniform float uLength; uniform float uTime;
+          varying float vT; varying vec3 vN; varying vec3 vV;
+          void main() {
+            float d = vT * uLength;
+            float facing = abs(dot(normalize(vN), normalize(vV)));
+            float body = pow(facing, 2.2);
+            float diamond = pow(0.5 + 0.5 * cos(6.2832 * (d - 0.55) / 1.75), 9.0);
+            float fade = exp(-d / (2.2 + 4.5 * uPower)) * smoothstep(0.0, 0.04, vT) * (1.0 - smoothstep(0.75, 1.0, vT));
+            float flicker = 0.9 + 0.1 * sin(uTime * 47.0 + d * 3.1) * sin(uTime * 31.0 - d * 1.7);
+            // Pink-violet shock diamonds over a faint blue-lilac glow, as in photos at high power.
+            vec3 glow = mix(vec3(0.55, 0.45, 1.0), vec3(0.42, 0.52, 1.0), vT);
+            vec3 shock = mix(vec3(1.0, 0.62, 0.78), vec3(0.88, 0.58, 1.0), vT);
+            float k = (0.8 + 4.2 * diamond * (0.35 + 0.65 * uPower)) * fade * flicker * (0.35 + 0.65 * uPower);
+            vec3 c = mix(glow, shock, diamond) * k * body;
+            gl_FragColor = vec4(c, 1.0);
+          }`,
+        transparent: true,
+        depthWrite: false,
+        side: T.DoubleSide,
+        blending: T.AdditiveBlending
+      });
+    }
+    // Plume length and brightness follow engine power (speed within the flight envelope).
+    updatePlume(mesh, e, menu, dt, clock) {
+      const u = mesh.userData.plume;
+      if (!u) return;
+      const span = S.config.maxSpeed - S.config.minSpeed;
+      const target = menu ? 0.55 : Math.max(0, Math.min(1, ((e.speed || 0) - S.config.minSpeed) / span));
+      u.power += (target - u.power) * (1 - Math.exp(-dt * 3));
+      const len = 4.5 + 8 * u.power;
+      u.mat.uniforms.uPower.value = u.power;
+      u.mat.uniforms.uLength.value = len;
+      u.mat.uniforms.uTime.value = clock;
+      u.core.uniforms.uPower.value = u.power;
+      for (const f of u.nodes) f.scale.set(0.5, 0.25, len);
     }
     // Lobby pre-flight control check: slow, overlapping pitch, roll and yaw sweeps.
     controlCheck(clock) {
@@ -282,6 +366,7 @@
         mesh.position.lerpVectors(e.prev, new T.Vector3().copy(e.body.translation()), alpha);
         mesh.quaternion.copy(e.prevQ).slerp(new T.Quaternion().copy(e.body.rotation()), alpha);
         this.moveSurfaces(mesh, menu ? this.controlCheck(clock) : e.ctrl, dt);
+        this.updatePlume(mesh, e, menu, dt, clock);
       }
       const pm = this.entityMeshes.get(p);
       if (pm) {
