@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#081b26" />
+    <title>SKY STRIKE — Operation Blue Meridian</title>
+    <link rel="stylesheet" href="src/style.css" />
+    <script src="vendor/three.js" defer></script>
+    <script src="vendor/rapier.js" defer></script>
+    <script src="assets/models.js" defer></script>
+    <script src="src/config.js" defer></script>
+    <script src="assets/radio.js" defer></script>
+    <script src="src/audio.js" defer></script>
+    <script src="src/mission.js" defer></script>
+    <script src="src/cockpit.js" defer></script>
+    <script src="src/fx.js" defer></script>
+    <script src="src/view.js" defer></script>
+    <script src="src/hud.js" defer></script>
+    <script src="src/main.js" defer></script>
+  </head>
+  <body>
+    <canvas id="world" aria-label="SKY STRIKE 3D 공중전 게임"></canvas>
+    <div class="vignette"></div>
+    <section id="menu" class="screen">
+      <div
+        id="model-inspect"
+        class="model-inspect"
+        tabindex="0"
+        role="group"
+        aria-label="전투기 3D 보기. 마우스 드래그 또는 방향키로 회전"
+      >
+        <p>DRAG TO ROTATE · 드래그로 기체 살펴보기</p>
+        <button id="model-reset">시점 초기화</button>
+      </div>
+      <header>
+        <a class="brand" href="#">SS<span> / FLIGHT COMMAND</span></a>
+        <div class="top-status"><i></i> OFFLINE READY <span>01 / SINGLE MISSION</span></div>
+      </header>
+      <div class="title-block">
+        <p class="eyebrow">ORIGINAL AIR COMBAT EXPERIENCE</p>
+        <h1>SKY<br /><span>STRIKE</span><b>™</b></h1>
+        <p class="tagline">수평선 너머, 당신의 공역.</p>
+        <div class="aircraft-label">
+          <span class="line"></span>
+          <div>F-22A RAPTOR / SPEAR-1<small>스피어원 / 기체 준비 완료</small></div>
+        </div>
+      </div>
+      <aside class="briefing">
+        <div class="mission-index"><span>MISSION 01</span><span>36° N / 142° E</span></div>
+        <p class="eyebrow">OPERATION</p>
+        <h2>BLUE<br />MERIDIAN</h2>
+        <p class="korean-title">블루 메리디안 작전</p>
+        <div class="brief-line"></div>
+        <p class="description">
+          고요한 군도에 미확인 편대가 진입했습니다. <br />F-22A에 탑승해 적기 5대를 격추하고 <br />군도
+          상공의 제공권을 확보하십시오.
+        </p>
+        <div class="mission-stats">
+          <div>
+            <small>목표</small><strong>05 <em>HOSTILES</em></strong>
+          </div>
+          <div><small>제한 시간</small><strong>06:00</strong></div>
+        </div>
+        <button id="launch" class="primary" disabled>
+          <span id="load-label">시스템 초기화 중…</span><b>↗</b>
+        </button>
+        <div class="sub-actions">
+          <button id="help-open">조작 가이드 <span>↗</span></button
+          ><button id="settings-open">설정 <span>⚙</span></button>
+        </div>
+        <p id="boot-status" role="status">내장 3D 모델 · 물리 엔진 준비 중</p>
+      </aside>
+      <footer>
+        <div class="control-strip">
+          <span><kbd>↑ ↓</kbd> 피치</span><span><kbd>A D</kbd> 롤</span
+          ><span><kbd>← →</kbd> 선회</span><span><kbd>W S</kbd> 추력</span
+          ><span><kbd>SPACE</kbd> 기관포</span><span><kbd>SHIFT</kbd> 미사일</span
+          ><span><kbd>F</kbd> 플레어</span><span><kbd>TAB</kbd> 표적</span
+          ><span><kbd>C</kbd> 시점</span>
+        </div>
+        <div class="footer-bottom">
+          <span>PC KEYBOARD REQUIRED</span><span>SKY STRIKE</span>
+        </div>
+      </footer>
+    </section>
+    <section id="hud" hidden>
+      <canvas id="instruments"></canvas>
+      <div class="hud-top">
+        <div class="hud-mission">
+          <small>BLUE MERIDIAN</small><strong id="objective">HOSTILES 00 / 05</strong>
+        </div>
+        <div id="timer">06:00</div>
+      </div>
+      <div class="speed instrument">
+        <small>SPEED / km/h</small><strong id="speed">648</strong><span id="throttle">THR 50%</span>
+      </div>
+      <div class="alt instrument">
+        <small>ALTITUDE / m</small><strong id="altitude">760</strong
+        ><span id="heading">HDG 000</span>
+      </div>
+      <div id="warning"></div>
+      <div id="radio"></div>
+      <div class="weapons">
+        <small>F-22A / RAPTOR</small><strong id="health">ARMOR 100%</strong>
+        <div class="health-track"><i id="health-bar"></i></div>
+        <p>MSL <b id="ammo">20</b><span>GUN ∞</span></p>
+        <div id="flare-count">F / FLARE 5 / 5</div>
+        <div id="lock-state">SEARCHING</div>
+      </div>
+      <div id="camera-mode">C / CHASE</div>
+      <div class="hud-bottom">
+        C 시점 전환 <span>TAB 표적 전환</span> <span>SHIFT 미사일</span> SPACE 기관포
+        <span>F 플레어</span> <span>ESC 일시정지</span>
+      </div>
+    </section>
+    <section id="overlay" class="modal-screen" hidden>
+      <div class="modal-card">
+        <p class="eyebrow" id="result-eyebrow">FLIGHT HOLD</p>
+        <h2 id="result-title">일시정지</h2>
+        <p id="result-copy">비행이 정지되었습니다.</p>
+        <div id="result-stats"></div>
+        <button id="resume" class="primary">비행 재개 <b>↗</b></button
+        ><button id="retry" class="secondary">다시 출격</button>
+        <div class="sub-actions">
+          <button id="pause-help">조작 가이드</button><button id="pause-settings">설정</button>
+        </div>
+        <button id="home" class="text-button">브리핑으로 돌아가기</button>
+      </div>
+    </section>
+    <dialog id="help">
+      <div class="dialog-head">
+        <p class="eyebrow">FLIGHT MANUAL</p>
+        <button data-close aria-label="닫기">✕</button>
+      </div>
+      <h2>첫 비행을 위한 안내</h2>
+      <p>방향키 ↑는 기수를 올립니다. 키를 놓으면 수평으로 복귀합니다.</p>
+      <dl>
+        <dt>↑ / ↓</dt>
+        <dd>기수 올리기 / 내리기</dd>
+        <dt>A / D</dt>
+        <dd>좌우 기울이기 · 뱅크 선회</dd>
+        <dt>← / →</dt>
+        <dd>좌우 방향 조정</dd>
+        <dt>W / S</dt>
+        <dd>추력 증가 / 감소</dd>
+        <dt>Space</dt>
+        <dd>기관포 연사 · 무제한 탄약</dd>
+        <dt>Shift</dt>
+        <dd>락온 후 유도미사일 발사 · 20발</dd>
+        <dt>F</dt>
+        <dd>플레어 방출 · 출격당 5회 · 미사일 경고 시 사용</dd>
+        <dt>Tab</dt>
+        <dd>표적 변경</dd>
+        <dt>C</dt>
+        <dd>3인칭 ↔ 1인칭 조종석 시점 전환</dd>
+        <dt>Esc</dt>
+        <dd>일시정지 / 재개</dd>
+      </dl>
+      <p class="tip">
+        표적을 중앙 원 안에 0.65초 유지하세요. <b>LOCKED</b>가 되면 Shift로 발사합니다. 미사일 한
+        발로 적기를 격추할 수 있습니다.
+      </p>
+      <p>
+        제한 시간 6분 안에 5대를 격추하면 성공. 적 미사일 피격마다 체력이 25% 감소합니다. 미사일
+        접근 경고가 뜨면 F키로 유도를 교란하거나, 가까이 접근했을 때 A/D와 좌우 방향키를 함께 눌러
+        급선회하세요. 적 미사일은 급격한 방향 변화를 따라잡지 못할 수 있습니다. 체력 소진, 지형·기체
+        충돌 또는 작전 반경 10.5km 밖에서 15초 이상 머무르면 실패합니다.
+      </p>
+      <button class="primary" data-close>확인 · 준비 완료</button>
+    </dialog>
+    <dialog id="settings">
+      <div class="dialog-head">
+        <p class="eyebrow">SYSTEM SETTINGS</p>
+        <button data-close aria-label="닫기">✕</button>
+      </div>
+      <h2>비행 환경 설정</h2>
+      <label class="setting"
+        >효과음 · 무전 볼륨 <input id="volume" type="range" min="0" max="100" value="35" /></label
+      ><label class="setting"
+        >배경음악 볼륨 <input id="musicVolume" type="range" min="0" max="100" value="35" /></label
+      ><label class="setting">음소거 <input id="mute" type="checkbox" /></label
+      ><label class="setting"
+        >화면 흔들림 · 메뉴 움직임 <input id="shake" type="checkbox" checked
+      /></label>
+      <p>설정 저장이 제한된 브라우저에서도 플레이할 수 있습니다.</p>
+      <button class="primary" data-close>확인</button>
+    </dialog>
+    <noscript>게임 실행을 위해 브라우저에서 JavaScript를 활성화하세요.</noscript>
+  </body>
+</html>

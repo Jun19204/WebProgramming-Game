@@ -1,0 +1,82 @@
+[
+  {
+    "name": "내장 WASM 초기화 · Blender GLB 3종 해석",
+    "pass": true,
+    "detail": "Rapier 0.19.1; THREE 180; GLB 3종"
+  },
+  {
+    "name": "동적 강체 전진 · 안정적인 수평 비행 · 추력 증가",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "좌우 뱅크 선회 · 수평 복귀",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "위 방향키 상승 · 아래 방향키 하강",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "락온 시간 · 발사 제한 · 쿨다운 · 유도 명중",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "표적 전환 락온 초기화",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "섬 지형의 락온 차폐",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "기관포 선분 판정 · 발사자 제외",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "해수면 충돌 패배",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "Blender 섬 삼각형 충돌 패배",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "구역 복귀 타이머 초기화 · 재이탈 패배",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "제한 시간 실패 · 종료 후 시간 정지",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "정상 조종 · 발사 명령만으로 전체 미션 승리",
+    "pass": true,
+    "detail": "격추 5대 / 26.9초 / 체력 100 / 미사일 14"
+  },
+  {
+    "name": "적 추격 · 공격으로 실제 피해",
+    "pass": true,
+    "detail": "체력 75 / 82.2초"
+  },
+  {
+    "name": "중복 피해 이중 격추 방지",
+    "pass": true,
+    "detail": "OK"
+  },
+  {
+    "name": "4회 재시작 자원 초기화",
+    "pass": true,
+    "detail": "OK"
+  }
+]
