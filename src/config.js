@@ -22,7 +22,7 @@
     gunLife: 1.8,
     boundary: 10500,
     returnTime: 15,
-    missionTime: 360,
+    missionTime: 300,
     maxProjectiles: 160,
     maxEffects: 150
   });
