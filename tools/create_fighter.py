@@ -13,12 +13,12 @@ def mat(name,c,metal=0,rough=.55):
  m=bpy.data.materials.new(name);m.diffuse_color=(*c,1);m.use_nodes=True
  p=m.node_tree.nodes.get('Principled BSDF');p.inputs['Base Color'].default_value=(*c,1);p.inputs['Metallic'].default_value=metal;p.inputs['Roughness'].default_value=rough
  return m
-skin=mat('Raptor cool grey skin',(.32,.35,.37),.30,.48)
+skin=mat('Raptor cool grey skin',(.32,.35,.37),.16,.56)
 edge=mat('RAM edge coating',(.405,.42,.43),.16,.61)
 nose=mat('Radome grey',(.37,.385,.395),.08,.62)
 dark=mat('Intake and nozzle cavity',(.009,.013,.018),.15,.75)
 seam=mat('Flush panel joints',(.17,.19,.20),.1,.65)
-glass=mat('Gold coated canopy',(.215,.165,.082),.62,.14)
+glass=mat('Gold coated canopy',(.34,.26,.10),.85,.07)
 metal=mat('Heat stained nozzle petals',(.24,.23,.21),.75,.4)
 light=mat('Position light',(.50,.035,.018),.1,.25)
 greenlight=mat('Starboard position light',(.025,.30,.13),.1,.25)
@@ -27,6 +27,7 @@ marking=mat('Low visibility identification grey',(.13,.15,.17),.05,.70)
 ductmat=mat('Inlet inner grey coating',(.115,.135,.15),.12,.72)
 hotmetal=mat('Nozzle inner heat shielding',(.105,.095,.085),.62,.58)
 coolmetal=mat('Nozzle titanium alternating panels',(.31,.30,.28),.72,.43)
+formation=mat('Formation light strip',(.40,.44,.30),.05,.45)
 def mesh(name,v,f,m,smooth=False):
  me=bpy.data.meshes.new(name);me.from_pydata(v,[],f);me.update()
  o=bpy.data.objects.new(name,me);bpy.context.collection.objects.link(o);me.materials.append(m)
@@ -46,37 +47,56 @@ def panel(name,pts,t,m):
 # One chined skin replaces the old intersecting engine tubes.
 # Station: y, half-width, crown, belly.
 stations=[(-7.25,1.95,.42,-.40),(-6.3,2.08,.62,-.62),(-4.5,2.22,.78,-.78),
- (-2.6,2.26,.85,-.86),(-.4,2.17,.83,-.9),(1.0,2.15,.8,-.9),
- (3.72,1.88,.72,-.8),(4.63,.87,.66,-.67),(5.8,.79,.59,-.54),
- (7.45,.61,.38,-.34),(8.35,.38,.19,-.22),(9.45,.008,-.055,-.065)]
-section=[(0,.91),(.28,.97),(.56,1),(.80,.69),(1,.04),(.88,-.7),(.53,-.95),(0,-1),(-.53,-.95),(-.88,-.7),(-1,.04),(-.80,.69),(-.56,1),(-.28,.97)]
+  (-2.6,2.26,.85,-.86),(-.4,2.17,.83,-.9),(1.0,2.15,.8,-.9),
+  (3.72,1.88,.72,-.8),(4.63,.87,.66,-.67),(5.4,.86,.614,-.58),(6.2,.83,.54,-.49),
+  (6.95,.76,.44,-.40),(7.65,.64,.34,-.31),(8.3,.48,.20,-.23),(8.85,.31,.11,-.15),
+  (9.45,.008,-.03,-.04)]
+# Broad flat F-22 nose: wide ogive in plan, sharp side chine and a faceted
+# upper side wall. Lower points are unchanged so the inlet belly loft still
+# meets the hull exactly.
+section=[(0,.92),(.3,.98),(.58,1),(.78,.84),(.89,.44),(1,.04),(.88,-.7),(.53,-.95),(0,-1),(-.53,-.95),(-.88,-.7),(-1,.04),(-.89,.44),(-.78,.84),(-.58,1),(-.3,.98)]
+CHINE=[i for i,(x,z) in enumerate(section) if abs(x)==1]
+def droop(y):
+ u=max(0,min(1,(y-7.0)/2.45));return .085*u*u
+def station(y):
+ for a,b in zip(stations,stations[1:]):
+  if a[0]<=y<=b[0]:
+   f=(y-a[0])/(b[0]-a[0]);return tuple(p+(q-p)*f for p,q in zip(a[1:],b[1:]))
+ return stations[-1][1:]
+def point(y,w,top,bottom,x,z):
+ # Keep the forward lower core narrow, leaving actual open intake cavities.
+ aft=max(0,min(1,(y+.4)/2.6));aft=aft*aft*(3-2*aft)
+ fore=max(0,min(1,(4.63-y)/.91));fore=fore*fore*(3-2*fore)
+ narrow=1-.57*aft*fore if z<0 else 1
+ height=z*top if z>=0 else -z*bottom
+ # Blend the two engine shoulders into the skin, retaining a shallow spine channel.
+ if z>0 and -6.8<y<2.5:
+  envelope=math.sin(math.pi*(y+6.8)/9.3)**.7
+  height+=.19*envelope*math.exp(-((abs(x*w)-1.12)/.55)**2)*z
+ if z>0 and 2.7<y<4.3:
+  height+=.14*math.sin(math.pi*(y-2.7)/1.6)*math.exp(-(x*w/.4)**2)*z
+ return (x*w*narrow,y,height-droop(y))
+def surf(y,x,z):return Vector(point(y,*station(y),x,z))
 def hull(name,rings,m):
  # Subdivide the surface for broad vertex-painted camouflage and smooth lighting.
  dense=[]
  for a,b in zip(rings,rings[1:]):
   dense.extend([tuple(x+(y-x)*k/6 for x,y in zip(a,b)) for k in range(6)])
  dense.append(rings[-1]);rings=dense
- v=[];n=len(section)
- for y,w,top,bottom in rings:
-  for x,z in section:
-   # Keep the forward lower core narrow, leaving actual open intake cavities.
-   aft=max(0,min(1,(y+.4)/2.6));aft=aft*aft*(3-2*aft)
-   fore=max(0,min(1,(4.63-y)/.91));fore=fore*fore*(3-2*fore)
-   narrow=1-.57*aft*fore if z<0 else 1
-   height=z*top if z>=0 else -z*bottom
-   # Blend the two engine shoulders into the skin, retaining a shallow spine channel.
-   if z>0 and -6.8<y<2.5:
-    envelope=math.sin(math.pi*(y+6.8)/9.3)**.7
-    height+=.19*envelope*math.exp(-((abs(x*w)-1.12)/.55)**2)*z
-   if z>0 and 2.7<y<4.3:
-    height+=.14*math.sin(math.pi*(y-2.7)/1.6)*math.exp(-(x*w/.4)**2)*z
-   v.append((x*w*narrow,y,height))
+ v=[point(y,w,top,bottom,x,z) for y,w,top,bottom in rings for x,z in section];n=len(section)
  f=[tuple(reversed(range(n))),tuple(range((len(rings)-1)*n,len(rings)*n))]
  f.extend((i*n+j,i*n+(j+1)%n,(i+1)*n+(j+1)%n,(i+1)*n+j) for i in range(len(rings)-1) for j in range(n))
- o=mesh(name,v,f,m,True);o.data.polygons[0].use_smooth=False;o.data.polygons[1].use_smooth=False;return o
+ o=mesh(name,v,f,m,True);o.data.polygons[0].use_smooth=False;o.data.polygons[1].use_smooth=False
+ # Crisp chine: split normals along the widest line only.
+ crease={tuple(sorted((i*n+j,(i+1)*n+j))) for i in range(len(rings)-1) for j in CHINE}
+ for e in o.data.edges:
+  if tuple(sorted(e.vertices)) in crease:e.use_edge_sharp=True
+ return o
 body=hull('Continuous chined fuselage',stations[:-2],skin)
 hull('Tapered radome',stations[-3:],nose)
-for s in [-1,1]:line('Nose chine',[(s*w,y,.04*top+.003) for y,w,top,bottom in stations[6:]],.009,edge)
+for s in [-1,1]:
+ line('Nose chine',[tuple(surf(4.7+k*.19,s,.04)+Vector((s*.006,0,.002))) for k in range(25)],.009,edge)
+line('Radome joint',[tuple(surf(8.28,x,z)+Vector((x*.006,0,z*.006))) for x,z in section+section[:1]],.006,seam)
 # Airfoil sections with camber, thin edges and the reference planform.
 wing=[(1.72,1.55,-5.95,.25),(2.18,1.0,-6.0,.23),(4.15,-.80,-5.59,.17),(5.89,-2.40,-5.05,.105),(6.78,-3.16,-4.25,.055)]
 tail=[(1.14,-6.2,-7.95,.14),(1.85,-6.0,-8.65,.12),(2.8,-6.5,-9.45,.09),(4.42,-7.57,-8.90,.035)]
@@ -117,7 +137,7 @@ def foil(name,rows,s,zbase):
   line(name+' Control surface break',[(s*x,front+(back-front)*u,zbase+.02+t*math.sin(math.pi*u)**.8) for u in [.79,.85,.92,.98]],.006,seam)
 for s in [-1,1]:
  foil('Diamond main wing',wing,s,0);foil('Separate swept stabilator',tail,s,-.10)
- fin=[(s*1.36,-3.4,.58),(s*2.30,-5.08,3.30),(s*2.44,-5.97,3.30),(s*1.64,-7.6,.58)]
+ fin=[(s*1.36,-3.4,.58),(s*2.62,-5.02,3.24),(s*2.80,-6.22,3.24),(s*1.64,-7.6,.58)]
  # Tapered, closed airfoil fin: retain the planform and cant, soften slab edges.
  rootfront,tipfront,tipback,rootback=map(Vector,fin)
  fn=(tipfront-rootfront).cross(tipback-rootfront).normalized()
@@ -150,9 +170,15 @@ for s in [-1,1]:
     d=.009+(.052-.025*h)*math.sin(math.pi*u)**.8
     strip.append(tuple(front.lerp(back,u)+fn*(side*d)))
   mesh('Vertical tail leading edge RAM',strip,[(2*j,2*j+1,2*j+3,2*j+2) for j in range(spansteps-1)],edge)
- line('Rudder hinge',[(s*2.39,-5.84,3.18),(s*1.74,-7.2,.72)],.010,edge)
+ # Rudder outline and formation lights on both faces of the actual fin surface.
+ for side in [-1,1]:
+  def finpt(h,u):
+   front=rootfront.lerp(tipfront,h);back=rootback.lerp(tipback,h)
+   return tuple(front.lerp(back,u)+fn*(side*(.010+(.052-.025*h)*math.sin(math.pi*u)**.8)))
+  line('Rudder hinge',[finpt(.06,.70),finpt(.62,.66),finpt(.62,.995)],.008,seam)
+  line('Fin tip formation light',[finpt(.975,.20),finpt(.975,.46)],.016,formation)
  # Texture-free stencil geometry: fictional SpearOne code, not a unit replica.
- origin=Vector(fin[0]);u=Vector((0,-s,0))
+ origin=Vector(fin[0]);u=Vector((0,s,0))
  normal=(Vector(fin[1])-origin).cross(Vector(fin[2])-origin).normalized()
  if normal.x*s<0:normal=-normal
  v=normal.cross(u).normalized()
@@ -194,28 +220,28 @@ for s in [-1,1]:
  cx=s*.98
  for top in [-1,1]:
   panel('Nozzle outer shroud',[(cx-.78,-6.8,top*.43),(cx+.78,-6.8,top*.43),(cx+.70,-7.8,top*.32),(cx-.70,-7.8,top*.32)],.055,skin)
-  for k in range(8):
-   x=cx-.70+k*.175
-   panel('Titanium nozzle petal',[(x,-7.55,top*.34),(x+.168,-7.55,top*.34),(x+.156,-8.24,top*.24),(x+.084,-8.34,top*.24),(x+.01,-8.24,top*.24)],.035,metal)
-   line('Nozzle petal stiffener',[(x+.084,-7.62,top*.365),(x+.084,-8.19,top*.267)],.009,metal)
+  # One broad vectoring flap per side with the F-22 sawtooth trailing edge.
+  flap=[(cx-.70,-7.55,top*.34),(cx+.70,-7.55,top*.34),(cx+.66,-8.30,top*.235),(cx+.33,-8.02,top*.255),(cx,-8.30,top*.235),(cx-.33,-8.02,top*.255),(cx-.66,-8.30,top*.235)]
+  panel('Vectoring nozzle flap',flap,.04,metal)
+  for x in [cx-.44,cx+.44]:line('Nozzle flap actuator fairing',[(x,-7.58,top*.37),(x,-7.98,top*.31)],.018,metal)
+  line('Nozzle flap hinge line',[(cx-.70,-7.57,top*.365),(cx+.70,-7.57,top*.365)],.007,seam)
  # Open rectangular outlet with a deep recessed throat and upper/lower liners.
  back=[(cx-.57,-7.28,-.32),(cx+.57,-7.28,-.32),(cx+.57,-7.28,.32),(cx-.57,-7.28,.32)]
- outlet=[(cx-.65,-8.27,-.22),(cx+.65,-8.27,-.22),(cx+.65,-8.27,.22),(cx-.65,-8.27,.22)]
+ outlet=[(cx-.65,-8.0,-.24),(cx+.65,-8.0,-.24),(cx+.65,-8.0,.24),(cx-.65,-8.0,.24)]
  mesh('Deep rectangular exhaust throat',back,[(0,1,2,3)],dark)
  mesh('Nozzle interior liner',back+outlet,[(i,(i+1)%4,(i+1)%4+4,i+4) for i in range(4)],hotmetal)
  for top in [-1,1]:
   for k in range(9):
    x=cx-.60+k*.15
-   line('Internal nozzle cooling channel',[(x,-7.35,top*.30),(x,-7.72,top*.265),(x,-8.20,top*.225)],.009,coolmetal)
+   line('Internal nozzle cooling channel',[(x,-7.35,top*.30),(x,-7.70,top*.27),(x,-7.96,top*.24)],.009,coolmetal)
   for k in range(4):
    x=cx-.67+k*.34
    panel('Overlapping nozzle hinge cover',[(x,-7.36,top*.39),(x+.25,-7.36,top*.39),(x+.23,-7.63,top*.35),(x+.02,-7.63,top*.35)],.015,coolmetal)
- for dx in [-.73,.73]:panel('Nozzle side wall',[(cx+dx,-7.3,-.34),(cx+dx,-7.3,.34),(cx+dx*.92,-8.25,.24),(cx+dx*.92,-8.25,-.24)],.025,metal)
+ for dx in [-.73,.73]:panel('Nozzle side wall',[(cx+dx,-7.3,-.34),(cx+dx,-7.3,.34),(cx+dx*.92,-8.28,.24),(cx+dx*.92,-8.28,-.24)],.025,metal)
  line('Wingtip navigation strip',[(s*6.73,-3.5,.06),(s*6.73,-3.75,.06)],.021,light if s<0 else greenlight)
- line('Ventral weapons bay',[(s*.12,2.9,-.91),(s*.80,2.5,-.91),(s*.84,-2.3,-.87),(s*.12,-2.6,-.87),(s*.12,2.9,-.91)],.007,seam)
 panel('Tail sting',[(-.16,-7.1,.03),(.16,-7.1,.03),(.12,-8.9,-.04),(0,-9.04,-.04),(-.12,-8.9,-.04)],.09,skin)
 # Forward teardrop canopy, a half-dome instead of the old complete ellipsoid.
-canopy=[(3.84,.04,.04,.70),(4.18,.45,.37,.73),(4.75,.55,.66,.73),(5.35,.56,.74,.70),(5.95,.47,.68,.66),(6.48,.32,.43,.58),(6.91,.03,.02,.48)]
+canopy=[(3.84,.04,.04,.70),(4.18,.42,.33,.72),(4.75,.52,.58,.72),(5.35,.53,.64,.69),(5.95,.46,.57,.64),(6.48,.33,.38,.56),(6.95,.04,.02,.46)]
 # Smooth longitudinal curvature while retaining the original canopy envelope.
 keys=canopy;canopy=[]
 for i in range(len(keys)-1):
@@ -279,7 +305,38 @@ for i in range(10):
 mesh('Low visibility insignia star',[(x,y,wing_height(x,y)+.003) for x,y in star],[tuple(range(10))],edge)
 # Flush low-observable antenna panels, with no external stores or raised rivets.
 for s in [-1,1]:
- panel('Flush forward cheek antenna',[(s*.63,6.0,.12),(s*.72,5.60,.13),(s*.76,5.0,.12),(s*.68,5.25,.13)],.008,ram)
+ # Flush cheek antenna on the faceted upper side wall, offset along the skin normal.
+ def onside(y,t,off=.007):
+  p=surf(y,s*(1-.11*t),.04+.40*t);return tuple(p+Vector((s*.92,0,.39)).normalized()*off)
+ panel('Flush forward cheek antenna',[onside(6.05,.30),onside(5.62,.62),onside(5.02,.55),onside(5.30,.22)],.008,ram)
+ # Nose-side formation light strip and air-data probes just above the chine.
+ line('Nose formation light',[onside(7.15,.45,.012),onside(6.55,.52,.012)],.018,formation)
+ for y in [7.95,7.55]:
+  p=surf(y,s,.04);line('Air data probe',[tuple(p+Vector((-s*.01,0,.05))),tuple(p+Vector((s*.11,-.05,.06)))],.012,metal)
+# Underside sawtooth doors projected onto the hull and the blended inlet belly.
+under=[body]+[o for o in bpy.data.objects if o.name.startswith('Blended inlet cheek')]
+uv=[];up=[]
+for o in under:
+ base=len(uv);uv.extend(v.co.copy() for v in o.data.vertices);up.extend([base+i for i in p.vertices] for p in o.data.polygons)
+belly=BVHTree.FromPolygons(uv,up)
+def belly_line(name,xy,material=seam,r=.007):
+ pts=[]
+ for a,b in zip(xy,xy[1:]):
+  for k in range(2):
+   x=a[0]+(b[0]-a[0])*k/2;y=a[1]+(b[1]-a[1])*k/2
+   hit,normal,idx,dist=belly.ray_cast(Vector((x,y,-5)),Vector((0,0,1)))
+   if hit:pts.append((x,y,hit.z-.009))
+ hit,normal,idx,dist=belly.ray_cast(Vector((xy[-1][0],xy[-1][1],-5)),Vector((0,0,1)))
+ if hit:pts.append((xy[-1][0],xy[-1][1],hit.z-.009))
+ if len(pts)>1:line(name,pts,r,material)
+def teeth(x0,x1,y,depth,n,sign):
+ return [(x0+(x1-x0)*k/(2*n),y+(depth*sign if k%2 else 0)) for k in range(2*n+1)]
+for s in [-1,1]:
+ # Main weapons bay door: sawtooth fore and aft edges, centre split.
+ belly_line('Main weapons bay door',[(s*.05,2.6)]+teeth(s*.05,s*.78,2.6,.22,2,1)[1:]+[(s*.80,-2.2)]+teeth(s*.80,s*.05,-2.2,.22,2,-1)[1:]+[(s*.05,2.6)])
+ # Main landing gear door outboard of the bay, between inlet duct and wing.
+ belly_line('Main gear door',[(s*.98,-.25)]+teeth(s*.98,s*1.62,-.25,.18,2,1)[1:]+[(s*1.62,-2.25)]+teeth(s*1.62,s*.98,-2.25,.18,2,-1)[1:]+[(s*.98,-.25)])
+belly_line('Nose gear door',[(-.18,6.9)]+teeth(-.18,.18,6.9,.12,2,1)[1:]+[(.18,5.15)]+teeth(.18,-.18,5.15,.12,2,-1)[1:]+[(-.18,6.9)])
 # Two-tone operational-style grey camouflage baked into vertex colors.
 # Broad irregular lobes follow the shoulders and wings; no runtime textures.
 skin.node_tree.nodes.get('Principled BSDF').inputs['Base Color'].default_value=(1,1,1,1)
