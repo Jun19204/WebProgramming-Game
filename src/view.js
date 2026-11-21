@@ -306,10 +306,10 @@
           look = desired.clone().add(new T.Vector3(0, 0, -100).applyQuaternion(q));
         } else {
           const q = pm.quaternion;
-          // Bring the chase camera closer for approximately 20% larger framing.
+          // Closer chase camera: about 25% larger than the previous 20% framing.
           desired = pos
             .clone()
-            .add(new T.Vector3(0, 6.5, 29).multiplyScalar(1 / 1.2).applyQuaternion(q));
+            .add(new T.Vector3(0, 6.5, 29).multiplyScalar(1 / 1.5).applyQuaternion(q));
           look = pos.clone().add(new T.Vector3(0, 3, -100).applyQuaternion(q));
           if (S.settings.shake && m.shake > 0)
             desired.add(
