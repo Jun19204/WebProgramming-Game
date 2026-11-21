@@ -13,16 +13,16 @@ def mat(name,c,metal=0,rough=.55):
  m=bpy.data.materials.new(name);m.diffuse_color=(*c,1);m.use_nodes=True
  p=m.node_tree.nodes.get('Principled BSDF');p.inputs['Base Color'].default_value=(*c,1);p.inputs['Metallic'].default_value=metal;p.inputs['Roughness'].default_value=rough
  return m
-skin=mat('Raptor cool grey skin',(.32,.35,.37),.16,.56)
-edge=mat('RAM edge coating',(.405,.42,.43),.16,.61)
-nose=mat('Radome grey',(.37,.385,.395),.08,.62)
+skin=mat('Raptor metallic grey camouflage',(.32,.35,.37),.30,.46)
+edge=mat('Light ghost grey edge trim',(.262,.280,.300),.04,.70)
+nose=mat('Light ghost grey radome',(.272,.290,.310),.0,.74)
 dark=mat('Intake and nozzle cavity',(.009,.013,.018),.15,.75)
 seam=mat('Flush panel joints',(.17,.19,.20),.1,.65)
 glass=mat('Gold coated canopy',(.34,.26,.10),.85,.07)
 metal=mat('Heat stained nozzle petals',(.24,.23,.21),.75,.4)
 light=mat('Position light',(.50,.035,.018),.1,.25)
 greenlight=mat('Starboard position light',(.025,.30,.13),.1,.25)
-ram=mat('Low contrast dielectric panels',(.28,.31,.33),.15,.65)
+ram=mat('Low contrast dielectric panels',(.225,.240,.255),.05,.72)
 marking=mat('Low visibility identification grey',(.13,.15,.17),.05,.70)
 ductmat=mat('Inlet inner grey coating',(.115,.135,.15),.12,.72)
 hotmetal=mat('Nozzle inner heat shielding',(.105,.095,.085),.62,.58)
@@ -55,6 +55,9 @@ stations=[(-7.25,1.95,.42,-.40),(-6.3,2.08,.62,-.62),(-4.5,2.22,.78,-.78),
 # upper side wall. Lower points are unchanged so the inlet belly loft still
 # meets the hull exactly.
 section=[(0,.92),(.3,.98),(.58,1),(.78,.84),(.89,.44),(1,.04),(.88,-.7),(.53,-.95),(0,-1),(-.53,-.95),(-.88,-.7),(-1,.04),(-.89,.44),(-.78,.84),(-.58,1),(-.3,.98)]
+# Extra points across the upper skin only, so vertex-painted camouflage holds a
+# defined edge; midpoints lie on the original facets, so the shape is unchanged.
+section=[q for a,b in zip(section,section[1:]+section[:1]) for q in ([a,((a[0]+b[0])/2,(a[1]+b[1])/2)] if a[1]>=.04 and b[1]>=.04 else [a])]
 CHINE=[i for i,(x,z) in enumerate(section) if abs(x)==1]
 def droop(y):
  u=max(0,min(1,(y-7.0)/2.45));return .085*u*u
@@ -92,11 +95,12 @@ def hull(name,rings,m):
  for e in o.data.edges:
   if tuple(sorted(e.vertices)) in crease:e.use_edge_sharp=True
  return o
-body=hull('Continuous chined fuselage',stations[:-2],skin)
-hull('Tapered radome',stations[-3:],nose)
+# The radome reaches back to about 7.65 m, well ahead of the windscreen.
+body=hull('Continuous chined fuselage',stations[:-3],skin)
+hull('Tapered radome',stations[-4:],nose)
 for s in [-1,1]:
  line('Nose chine',[tuple(surf(4.7+k*.19,s,.04)+Vector((s*.006,0,.002))) for k in range(25)],.009,edge)
-line('Radome joint',[tuple(surf(8.28,x,z)+Vector((x*.006,0,z*.006))) for x,z in section+section[:1]],.006,seam)
+line('Radome joint',[tuple(surf(7.67,x,z)+Vector((x*.006,0,z*.006))) for x,z in section+section[:1]],.006,seam)
 # Airfoil sections with camber, thin edges and the reference planform.
 wing=[(1.72,1.55,-5.95,.25),(2.18,1.0,-6.0,.23),(4.15,-.80,-5.59,.17),(5.89,-2.40,-5.05,.105),(6.78,-3.16,-4.25,.055)]
 tail=[(1.14,-6.2,-7.95,.14),(1.85,-6.0,-8.65,.12),(2.8,-6.5,-9.45,.09),(4.42,-7.57,-8.90,.035)]
@@ -138,30 +142,31 @@ def foil(name,rows,s,zbase,surfaces):
  def pos(x,u,side):
   front,back,t=rowat(x);return (s*x,front+(back-front)*u,zbase+side*(.009+t*math.sin(math.pi*u)**.8))
  def strip(label,xa,xb,ua,ub,m,lift=.005):
-  xs=span(rows,xa,xb,12);v=[]
+  # Chordwise samples keep the wider trim band on the curved airfoil surface.
+  xs=span(rows,xa,xb,12);v=[];nu=4
   for x in xs:
-   for u in [ua,ub]:
-    p=pos(x,u,1);v.append((p[0],p[1],p[2]+lift))
-  return mesh(name+' '+label,v,[(2*i,2*i+1,2*i+3,2*i+2) for i in range(len(xs)-1)],m)
+   for k in range(nu):
+    p=pos(x,ua+(ub-ua)*k/(nu-1),1);v.append((p[0],p[1],p[2]+lift))
+  return mesh(name+' '+label,v,[(nu*i+k,nu*i+k+1,nu*(i+1)+k+1,nu*(i+1)+k) for i in range(len(xs)-1) for k in range(nu-1)],m)
  root,tip=rows[0][0],rows[-1][0]
  if surfaces is None:
   tag='stab_'+('L' if s<0 else 'R')
   movable(tag,slab(name,span(rows,root,tip,32),lambda a:(0,1),25,pos,skin),
-          strip('Leading edge RAM strip',root,tip,0,.045,edge),strip('Trailing edge RAM strip',root,tip,.955,1,edge),
+          strip('Leading edge RAM strip',root,tip,0,.075,edge),strip('Trailing edge RAM strip',root,tip,.94,1,edge),
           line(name+' Leading edge seal',[(p[0],p[1],p[2]+.008) for p in (pos(x,.035,1) for x in span(rows,root,tip,16))],.009,edge))
   # All-moving stabilator pivots on a spanwise spigot near 45% root chord.
   front,back,t=rowat(root);hinge(tag,(s*root,front+(back-front)*.45,zbase),(1,0,0));return
  H=.79;gap=.025
  slab(name,span(rows,root,tip,32),lambda a:(0,H),20,pos,skin)
- strip('Leading edge RAM strip',root,tip,0,.045,edge)
+ strip('Leading edge RAM strip',root,tip,0,.075,edge)
  line(name+' Leading edge seal',[(p[0],p[1],p[2]+.008) for p in (pos(x,.035,1) for x in span(rows,root,tip,16))],.009,edge)
  # Fixed trailing-edge pieces fill everything outside the moving surfaces.
  edges=[root]+[x for _,a,b in surfaces for x in (a-gap,b+gap)]+[tip]
  for xa,xb in zip(edges[::2],edges[1::2]):
-  if xb-xa>.01:slab(name+' fixed trailing edge',span(rows,xa,xb,3),lambda a:(H,1),6,pos,skin);strip('Trailing edge RAM strip',xa,xb,.955,1,edge)
+  if xb-xa>.01:slab(name+' fixed trailing edge',span(rows,xa,xb,3),lambda a:(H,1),6,pos,skin);strip('Trailing edge RAM strip',xa,xb,.94,1,edge)
  for tag,xa,xb in surfaces:
   full=tag+('_L' if s<0 else '_R')
-  movable(full,slab(name+' '+tag,span(rows,xa,xb,8),lambda a:(H+.006,1),7,pos,skin),strip('Trailing edge RAM strip',xa,xb,.955,1,edge))
+  movable(full,slab(name+' '+tag,span(rows,xa,xb,8),lambda a:(H+.006,1),7,pos,skin),strip('Trailing edge RAM strip',xa,xb,.94,1,edge))
   a=pos(xa,H,0);b=pos(xb,H,0);axis=Vector(b)-Vector(a)
   hinge(full,a,axis if axis.x>0 else -axis)
 for s in [-1,1]:
@@ -191,7 +196,7 @@ for s in [-1,1]:
   strip=[]
   for j in range(17):
    h=j/16
-   for u in [0,.035]:strip.append(tuple(finpos(h,u,side)+fn*(side*.003)))
+   for u in [0,.065]:strip.append(tuple(finpos(h,u,side)+fn*(side*.003)))
   mesh('Vertical tail leading edge RAM',strip,[(2*j,2*j+1,2*j+3,2*j+2) for j in range(16)],edge)
   line('Fin tip formation light',[tuple(finpos(.975,.20,side)+fn*(side*.004)),tuple(finpos(.975,.46,side)+fn*(side*.004))],.016,formation)
  # Texture-free stencil geometry: fictional SpearOne code, not a unit replica.
@@ -298,6 +303,18 @@ for s in [-1,1]:
  surface_line('Forward avionics access',[(s*.25,7.30),(s*.46,7.05),(s*.51,6.70)],seam,.005)
  surface_line('Engine shoulder longitudinal joint',[(s*1.89,1.8),(s*1.95,-1.2),(s*1.92,-3.7),(s*1.70,-5.7)],seam,.006)
 # The canopy aft fairing is integrated into the hull station heights above.
+def surface_patch(name,quad,material,nu=10,nv=26,lift=.005):
+ a,b,c,d=map(Vector,[(*q,0) for q in quad]);v=[];idx={}
+ for i in range(nu+1):
+  for j in range(nv+1):
+   q=(a.lerp(b,i/nu)).lerp(d.lerp(c,i/nu),j/nv)
+   hit,normal,_,_=tree.ray_cast(Vector((q.x,q.y,5)),Vector((0,0,-1)))
+   if hit and normal.z>.25:idx[i,j]=len(v);v.append(tuple(hit+normal*lift))
+ f=[(idx[i,j],idx[i+1,j],idx[i+1,j+1],idx[i,j+1]) for i in range(nu) for j in range(nv) if all(k in idx for k in [(i,j),(i+1,j),(i+1,j+1),(i,j+1)])]
+ if f:mesh(name,v,f,material,True)
+# Panels use the camouflage coat itself and follow its tone along the length.
+surface_patch('Left engine bay access panel',[(-1.55,-.95),(-.78,-.70),(-.78,-4.25),(-1.50,-4.55)],skin)
+surface_patch('Dorsal panel between engines',[(-.30,-2.75),(.30,-2.75),(.24,-6.70),(-.24,-6.70)],skin,6,30)
 surface_line('Dorsal refuelling door',[(-.28,2.8),(-.38,2.3),(-.28,1.9),(.28,1.9),(.38,2.3),(.28,2.8),(-.28,2.8)],seam,.008)
 # Low-visibility star-and-bars, projected to the left upper wing without textures.
 def wing_height(x,y):
@@ -328,7 +345,7 @@ for s in [-1,1]:
  panel('Flush forward cheek antenna',[onside(6.05,.30),onside(5.62,.62),onside(5.02,.55),onside(5.30,.22)],.008,ram)
  # Nose-side formation light strip and air-data probes just above the chine.
  line('Nose formation light',[onside(7.15,.45,.012),onside(6.55,.52,.012)],.018,formation)
- for y in [7.95,7.55]:
+ for y in [7.35,7.0]:
   p=surf(y,s,.04);line('Air data probe',[tuple(p+Vector((-s*.01,0,.05))),tuple(p+Vector((s*.11,-.05,.06)))],.012,metal)
 # Underside sawtooth doors projected onto the hull and the blended inlet belly.
 under=[body]+[o for o in bpy.data.objects if o.name.startswith('Blended inlet cheek')]
@@ -359,27 +376,47 @@ belly_line('Nose gear door',[(-.18,6.9)]+teeth(-.18,.18,6.9,.12,2,1)[1:]+[(.18,5
 skin.node_tree.nodes.get('Principled BSDF').inputs['Base Color'].default_value=(1,1,1,1)
 attr=skin.node_tree.nodes.new('ShaderNodeVertexColor');attr.layer_name='Paint'
 skin.node_tree.links.new(attr.outputs['Color'],skin.node_tree.nodes.get('Principled BSDF').inputs['Base Color'])
+def smooth(t):
+ t=max(0,min(1,t));return t*t*(3-2*t)
+def planform(rows,x):
+ for a,b in zip(rows,rows[1:]):
+  if a[0]<=x<=b[0]:
+   f=(x-a[0])/(b[0]-a[0]);return a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f
+ r=rows[0] if x<rows[0][0] else rows[-1];return r[1],r[2]
+def lobe(rows,x,y,u0,u1,inset_root,inset_tip,seed):
+ # Dark field inset from every edge of the planform, with an irregular border.
+ front,back=planform(rows,x);u=(front-y)/max(.01,front-back)
+ inner=min((u-u0)/.10,(u1-u)/.10,(x-rows[0][0]-inset_root)/.35,(rows[-1][0]-inset_tip-x)/.35)
+ return smooth(inner+noise.noise_vector(Vector((x*.7,y*.7,seed))).x*1.1+.35)
+LIGHT=(.300,.312,.326);DARK=(.145,.155,.166)
 for o in list(bpy.context.scene.objects):
  if o.type!='MESH' or o.data.materials[0]!=skin:continue
  colors=o.data.color_attributes.new(name='Paint',type='FLOAT_COLOR',domain='CORNER')
+ lname=o.name.lower()
  for loop in o.data.loops:
   p=o.data.vertices[loop.vertex_index].co
   x=abs(p.x);y=p.y
-  warp=noise.noise_vector(Vector((p.x*.55,y*.42,2.3))).x*.20
-  patches=[(1.10,-1.5,1.05,3.2),(2.6,-2.7,1.45,1.65),(3.8,-3.1,1.3,1.15),
-           (5.20,-3.5,.85,.67),(2.6,-7.65,1.05,.72),(.65,3.0,.60,1.0)]
-  field=max(1-((x-cx)/rx)**2-((y-cy)/ry)**2 for cx,cy,rx,ry in patches)+warp
-  blend=max(0,min(1,(field+.12)/.32));blend=blend*blend*(3-2*blend)
-  # Keep the belly light; the fins carry a quieter grey variation.
-  if p.z<-.18:blend*=max(0,1+(p.z+.18)*3)
-  if 'vertical tail' in o.name:blend=.25+.30*max(0,min(1,(p.z-.6)/2.7))
-  lightgrey=(.385,.405,.42);darkgrey=(.245,.267,.285)
+  # Pattern after public USAF photos: large dark lobes fill the wing and
+  # stabilator centres, the fuselage stays light with soft darker mottling.
+  if 'wing' in lname:blend=lobe(wing,x,y,.15,.80,-.6,.60,1.7)
+  elif 'stabilator' in lname:blend=lobe(tail,x,y,.20,.80,.30,.55,3.1)
+  elif 'vertical tail' in lname:
+   # A swept patch that follows the fin's leading-edge angle, not a round stain.
+   ys=y+.61*(p.z-1.9)
+   inner=min((ys+4.55)/-.25,(ys+6.55)/.25,(p.z-.95)/.25,(2.75-p.z)/.25)
+   blend=.85*smooth(inner+noise.noise_vector(Vector((ys*.6,p.z*.6,5.3))).x*.5+.3)
+  else:
+   # Fuselage: light forward, darkening aft to meet the wing lobes. The tone
+   # changes only along the length, where the hull is finely divided; any
+   # side-to-side edge stretched across the coarse side wall as a smear.
+   aft=smooth((1.5-y)/1.9)
+   blend=.22+(.78-.22)*aft+.04*noise.noise_vector(Vector((0,y*.25,8.6))).x
   # Restrained coating variation, with a small warm shift near the exhausts.
   wear=1+noise.noise_vector(Vector((p.x*1.8,y*1.8,p.z*.8))).x*.024
-  if 'wing' in o.name.lower():wear*=1+.012*math.sin(math.floor(x*1.1)*2.4)
+  if ' panel' in lname:wear*=.93
   heat=max(0,min(1,(-y-5.8)/2.5))*max(0,1-abs(x-.98)/.8)
-  lightgrey=tuple(c-heat*d for c,d in zip(lightgrey,(.012,.018,.025)))
-  darkgrey=tuple(c-heat*d for c,d in zip(darkgrey,(.006,.010,.016)))
+  lightgrey=tuple(c-heat*d for c,d in zip(LIGHT,(.012,.018,.025)))
+  darkgrey=tuple(c-heat*d for c,d in zip(DARK,(.006,.010,.016)))
   colors.data[loop.index].color=(*( (a+(b-a)*blend)*wear for a,b in zip(lightgrey,darkgrey)),1)
 bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=next(iter(bpy.context.scene.objects));bpy.ops.object.convert(target='MESH')
 for m in list(bpy.data.materials):
