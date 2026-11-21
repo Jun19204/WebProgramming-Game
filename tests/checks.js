@@ -170,6 +170,93 @@
       m.damage(e, 100);
       assert(m.kills === 1, '중복 집계');
     });
+    await run('조종 입력 → 조종면 요구값 부호 · 물리 자세 불변', (m) => {
+      const cases = [
+        ['ArrowUp', 'pitch', 1],
+        ['ArrowDown', 'pitch', -1],
+        ['KeyD', 'roll', 1],
+        ['KeyA', 'roll', -1],
+        ['ArrowRight', 'yaw', 1],
+        ['ArrowLeft', 'yaw', -1]
+      ];
+      const out = [];
+      for (const [key, axis, sign] of cases) {
+        const t = new S.Mission(data.terrain);
+        try {
+          for (let i = 0; i < 90; i++) {
+            t.step(C.step, { [key]: true });
+            if (i > 5)
+              assert(t.player.ctrl[axis] * sign > 0.3, key + ' 유지 중 ' + axis + ' 반대/부족');
+          }
+          out.push(key + ' ' + t.player.ctrl[axis].toFixed(2));
+        } finally {
+          t.dispose();
+        }
+      }
+      // Control demand is render-only: it must never feed the rigid body.
+      const a = new S.Mission(data.terrain),
+        b = new S.Mission(data.terrain);
+      try {
+        tick(a, 60, { KeyD: true });
+        tick(b, 60, { KeyD: true });
+        b.player.ctrl.roll = -1;
+        tick(a, 1, { KeyD: true });
+        tick(b, 1, { KeyD: true });
+        const qa = a.player.body.rotation(),
+          qb = b.player.body.rotation();
+        assert(Math.abs(qa.x - qb.x) + Math.abs(qa.y - qb.y) + Math.abs(qa.z - qb.z) < 1e-9, '조종면 값이 물리에 영향');
+      } finally {
+        a.dispose();
+        b.dispose();
+      }
+      return out.join(', ');
+    });
+    await check('조종면 8개 힌지 회전 방향', () => {
+      const fake = {
+        models: data.models,
+        scene: new T.Scene(),
+        entityMeshes: new Map(),
+        flameGeo: new T.BoxGeometry(),
+        flameMat: new T.MeshBasicMaterial(),
+        hingeAxis: new T.Vector3(1, 0, 0),
+        hingeTurn: new T.Quaternion()
+      };
+      const g = S.View.prototype.aircraft.call(fake, { enemy: false });
+      const surf = g.userData.surfaces;
+      assert(surf.length === 8, '조종면 노드 ' + surf.length + '개');
+      g.updateMatrixWorld(true);
+      // Trailing-edge vertex of each surface (largest aft +Z in aircraft frame).
+      const te = surf.map((s) => {
+        const pos = s.node.geometry ? s.node.geometry.attributes.position : s.node.children[0].geometry.attributes.position,
+          holder = s.node.geometry ? s.node : s.node.children[0],
+          v = new T.Vector3();
+        let best = null;
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i);
+          const w = holder.localToWorld(v.clone());
+          if (!best || w.z > best.w.z) best = { i, w };
+        }
+        return { s, holder, pos, i: best.i, w0: best.w };
+      });
+      const moved = (ctrl) => {
+        for (let k = 0; k < 200; k++) S.View.prototype.moveSurfaces.call(fake, g, ctrl, 0.05);
+        g.updateMatrixWorld(true);
+        return te.map((t) => t.holder.localToWorld(new T.Vector3().fromBufferAttribute(t.pos, t.i)).sub(t.w0));
+      };
+      const find = (kind, right) => te.findIndex((t) => t.s.kind === kind && t.s.right === right);
+      let d = moved({ pitch: 1, roll: 0, yaw: 0 });
+      assert(d[find('stab', true)].y > 0.15 && d[find('stab', false)].y > 0.15, '기수 올림: 수평꼬리 뒷전 상승 아님');
+      d = moved({ pitch: 0, roll: 1, yaw: 0 });
+      for (const k of ['aileron', 'flaperon'])
+        assert(d[find(k, true)].y > 0.1 && d[find(k, false)].y < -0.1, '우선회: ' + k + ' 방향 오류');
+      d = moved({ pitch: 0, roll: 0, yaw: 1 });
+      assert(d[find('rudder', true)].x > 0.15 && d[find('rudder', false)].x > 0.15, '기수 오른쪽: 방향타 뒷전 우측 아님');
+      d = moved({ pitch: 0, roll: 0, yaw: 0 });
+      assert(d.every((v) => v.length() < 1e-3), '중립 복귀 실패');
+      fake.flameGeo.dispose();
+      fake.flameMat.dispose();
+      return '수평꼬리 2 · 에일러론 2 · 플래퍼론 2 · 방향타 2';
+    });
     await check('4회 재시작 자원 초기화', () => {
       for (let i = 0; i < 4; i++) {
         const m = new S.Mission(data.terrain);

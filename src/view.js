@@ -79,6 +79,8 @@
       }
       this.scene.add(clouds);
       this.entityMeshes = new Map();
+      this.hingeAxis = new T.Vector3(1, 0, 0);
+      this.hingeTurn = new T.Quaternion();
       this.shots = [];
       this.effects = [];
       this.effectGeo = new T.IcosahedronGeometry(1, 2);
@@ -215,6 +217,14 @@
           }
         });
       }
+      // Hinged control surfaces: each node's local X axis is its hinge line.
+      g.userData.surfaces = [];
+      g.userData.servo = { pitch: 0, roll: 0, yaw: 0 };
+      g.traverse((o) => {
+        const match = /^CS_(\w+)_([LR])$/.exec(o.name);
+        if (match)
+          g.userData.surfaces.push({ node: o, kind: match[1], right: match[2] === 'R', base: o.quaternion.clone() });
+      });
       for (const x of [-0.98, 0.98]) {
         const f = new T.Mesh(this.flameGeo, this.flameMat);
         f.position.set(x, 0, 9.15);
@@ -224,6 +234,37 @@
       this.scene.add(g);
       this.entityMeshes.set(e, g);
       return g;
+    }
+    // Lobby pre-flight control check: slow, overlapping pitch, roll and yaw sweeps.
+    controlCheck(clock) {
+      return {
+        pitch: 0.7 * Math.sin(clock * 0.9),
+        roll: 0.7 * Math.sin(clock * 0.9 + 2.1),
+        yaw: 0.6 * Math.sin(clock * 0.6 + 4.2)
+      };
+    }
+    moveSurfaces(mesh, ctrl, dt) {
+      const servo = mesh.userData.servo;
+      if (!servo || !ctrl) return;
+      // Actuators have a finite rate, so surfaces ease toward the demand.
+      const rate = 4 * Math.min(dt, 0.1);
+      for (const k of ['pitch', 'roll', 'yaw'])
+        servo[k] += S.math.clamp(ctrl[k] - servo[k], -rate, rate);
+      const D = Math.PI / 180,
+        { pitch, roll, yaw } = servo;
+      for (const s of mesh.userData.surfaces) {
+        const side = s.right ? -1 : 1;
+        // Positive angle is trailing edge down (wing and tail) or right (rudders).
+        const angle =
+          s.kind === 'stab'
+            ? (-pitch * 20 + side * roll * 8) * D
+            : s.kind === 'aileron'
+              ? side * roll * 22 * D
+              : s.kind === 'flaperon'
+                ? side * roll * 15 * D
+                : yaw * 25 * D;
+        s.node.quaternion.copy(s.base).multiply(this.hingeTurn.setFromAxisAngle(this.hingeAxis, angle));
+      }
     }
     draw(m, state, alpha, dt, clock) {
       const menu = state === 'menu',
@@ -240,6 +281,7 @@
         mesh.visible = true;
         mesh.position.lerpVectors(e.prev, new T.Vector3().copy(e.body.translation()), alpha);
         mesh.quaternion.copy(e.prevQ).slerp(new T.Quaternion().copy(e.body.rotation()), alpha);
+        this.moveSurfaces(mesh, menu ? this.controlCheck(clock) : e.ctrl, dt);
       }
       const pm = this.entityMeshes.get(p);
       if (pm) {

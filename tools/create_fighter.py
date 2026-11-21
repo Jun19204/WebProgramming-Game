@@ -39,7 +39,7 @@ def line(name,pts,r=.006,m=seam):
  cu=bpy.data.curves.new(name,'CURVE');cu.dimensions='3D';cu.bevel_depth=r;cu.bevel_resolution=1;cu.resolution_u=1
  sp=cu.splines.new('POLY');sp.points.add(len(pts)-1)
  for p,co in zip(sp.points,pts):p.co=(*co,1)
- o=bpy.data.objects.new(name,cu);bpy.context.collection.objects.link(o);cu.materials.append(m)
+ o=bpy.data.objects.new(name,cu);bpy.context.collection.objects.link(o);cu.materials.append(m);return o
 def panel(name,pts,t,m):
  normal=(Vector(pts[1])-Vector(pts[0])).cross(Vector(pts[2])-Vector(pts[0])).normalized()
  n=len(pts);v=[tuple(Vector(p)+normal*d) for d in [-t/2,t/2] for p in pts]
@@ -100,83 +100,100 @@ line('Radome joint',[tuple(surf(8.28,x,z)+Vector((x*.006,0,z*.006))) for x,z in 
 # Airfoil sections with camber, thin edges and the reference planform.
 wing=[(1.72,1.55,-5.95,.25),(2.18,1.0,-6.0,.23),(4.15,-.80,-5.59,.17),(5.89,-2.40,-5.05,.105),(6.78,-3.16,-4.25,.055)]
 tail=[(1.14,-6.2,-7.95,.14),(1.85,-6.0,-8.65,.12),(2.8,-6.5,-9.45,.09),(4.42,-7.57,-8.90,.035)]
-def foil(name,rows,s,zbase):
- original=rows
- rows=[]
- for a,b in zip(original,original[1:]):
-  rows.extend(tuple(v+(w-v)*k/8 for v,w in zip(a,b)) for k in range(8))
- rows.append(original[-1])
- v=[];count=25
+CS={}
+def movable(tag,*objs):
+ for o in objs:
+  if o is not None:o['cs']=tag;CS.setdefault(tag,{})
+ return objs[0]
+def hinge(tag,origin,axis):CS[tag]['origin']=Vector(origin);CS[tag]['axis']=Vector(axis).normalized()
+def slab(name,avals,brange,nb,pos,m):
+ # Closed thin solid over a span (a) by chord (b) grid, both faces plus all four edges.
+ v=[]
  for side in [1,-1]:
-  for x,front,back,t in rows:
-   for k in range(count):
-    u=k/(count-1);v.append((s*x,front+(back-front)*u,zbase+side*(.009+t*math.sin(math.pi*u)**.8)))
- layer=len(rows)*count;f=[]
+  for a in avals:
+   b0,b1=brange(a)
+   for k in range(nb):v.append(tuple(pos(a,b0+(b1-b0)*k/(nb-1),side)))
+ na=len(avals);layer=na*nb;f=[]
  for side in range(2):
-  for j in range(len(rows)-1):
-   for k in range(count-1):
-    a=side*layer+j*count+k;f.append((a,a+1,a+1+count,a+count))
- for j in range(len(rows)-1):
-  for k in [0,count-1]:
-   a=j*count+k;b=(j+1)*count+k;f.append((a,b,b+layer,a+layer))
- for j in [0,len(rows)-1]:
-  for k in range(count-1):
-   a=j*count+k;f.append((a,a+1,a+1+layer,a+layer))
- mesh(name,v,f,skin,True)
- for u,label in [(.035,'Leading edge seal'),(.79,'Control surface hinge')]:
-  pts=[(s*x,front+(back-front)*u,zbase+.009+t*math.sin(math.pi*u)**.8+.008) for x,front,back,t in rows]
-  line(name+' '+label,pts,.009,edge if u<.1 else seam)
- # Broad flush RAM edge strips and individual trailing control surfaces.
- for ua,ub,label in [(0,.045,'Leading edge RAM strip'),(.955,1,'Trailing edge RAM strip')]:
-  strip=[]
-  for x,front,back,t in rows:
+  for j in range(na-1):
+   for k in range(nb-1):
+    a=side*layer+j*nb+k;f.append((a,a+1,a+1+nb,a+nb))
+ for j in range(na-1):
+  for k in [0,nb-1]:
+   a=j*nb+k;b=a+nb;f.append((a,b,b+layer,a+layer))
+ for j in [0,na-1]:
+  for k in range(nb-1):
+   a=j*nb+k;f.append((a,a+1,a+1+layer,a+layer))
+ return mesh(name,v,f,m,True)
+def span(rows,xa,xb,n):
+ xs={xa+(xb-xa)*i/n for i in range(n+1)}|{r[0] for r in rows if xa<r[0]<xb}
+ return sorted(xs)
+def foil(name,rows,s,zbase,surfaces):
+ # surfaces: (tag,x0,x1) trailing-edge control surfaces; None tag means the whole foil moves.
+ def rowat(x):
+  for a,b in zip(rows,rows[1:]):
+   if a[0]<=x<=b[0]:
+    f=(x-a[0])/(b[0]-a[0]);return tuple(p+(q-p)*f for p,q in zip(a[1:],b[1:]))
+  return rows[-1][1:]
+ def pos(x,u,side):
+  front,back,t=rowat(x);return (s*x,front+(back-front)*u,zbase+side*(.009+t*math.sin(math.pi*u)**.8))
+ def strip(label,xa,xb,ua,ub,m,lift=.005):
+  xs=span(rows,xa,xb,12);v=[]
+  for x in xs:
    for u in [ua,ub]:
-    strip.append((s*x,front+(back-front)*u,zbase+.014+t*math.sin(math.pi*u)**.8))
-  mesh(name+' '+label,strip,[(2*i,2*i+1,2*i+3,2*i+2) for i in range(len(rows)-1)],edge)
- for x,front,back,t in original[1:-1]:
-  line(name+' Control surface break',[(s*x,front+(back-front)*u,zbase+.02+t*math.sin(math.pi*u)**.8) for u in [.79,.85,.92,.98]],.006,seam)
+    p=pos(x,u,1);v.append((p[0],p[1],p[2]+lift))
+  return mesh(name+' '+label,v,[(2*i,2*i+1,2*i+3,2*i+2) for i in range(len(xs)-1)],m)
+ root,tip=rows[0][0],rows[-1][0]
+ if surfaces is None:
+  tag='stab_'+('L' if s<0 else 'R')
+  movable(tag,slab(name,span(rows,root,tip,32),lambda a:(0,1),25,pos,skin),
+          strip('Leading edge RAM strip',root,tip,0,.045,edge),strip('Trailing edge RAM strip',root,tip,.955,1,edge),
+          line(name+' Leading edge seal',[(p[0],p[1],p[2]+.008) for p in (pos(x,.035,1) for x in span(rows,root,tip,16))],.009,edge))
+  # All-moving stabilator pivots on a spanwise spigot near 45% root chord.
+  front,back,t=rowat(root);hinge(tag,(s*root,front+(back-front)*.45,zbase),(1,0,0));return
+ H=.79;gap=.025
+ slab(name,span(rows,root,tip,32),lambda a:(0,H),20,pos,skin)
+ strip('Leading edge RAM strip',root,tip,0,.045,edge)
+ line(name+' Leading edge seal',[(p[0],p[1],p[2]+.008) for p in (pos(x,.035,1) for x in span(rows,root,tip,16))],.009,edge)
+ # Fixed trailing-edge pieces fill everything outside the moving surfaces.
+ edges=[root]+[x for _,a,b in surfaces for x in (a-gap,b+gap)]+[tip]
+ for xa,xb in zip(edges[::2],edges[1::2]):
+  if xb-xa>.01:slab(name+' fixed trailing edge',span(rows,xa,xb,3),lambda a:(H,1),6,pos,skin);strip('Trailing edge RAM strip',xa,xb,.955,1,edge)
+ for tag,xa,xb in surfaces:
+  full=tag+('_L' if s<0 else '_R')
+  movable(full,slab(name+' '+tag,span(rows,xa,xb,8),lambda a:(H+.006,1),7,pos,skin),strip('Trailing edge RAM strip',xa,xb,.955,1,edge))
+  a=pos(xa,H,0);b=pos(xb,H,0);axis=Vector(b)-Vector(a)
+  hinge(full,a,axis if axis.x>0 else -axis)
 for s in [-1,1]:
- foil('Diamond main wing',wing,s,0);foil('Separate swept stabilator',tail,s,-.10)
+ foil('Diamond main wing',wing,s,0,[('flaperon',2.32,4.08),('aileron',4.22,5.83)])
+ foil('Separate swept stabilator',tail,s,-.10,None)
  fin=[(s*1.36,-3.4,.58),(s*2.62,-5.02,3.24),(s*2.80,-6.22,3.24),(s*1.64,-7.6,.58)]
  # Tapered, closed airfoil fin: retain the planform and cant, soften slab edges.
  rootfront,tipfront,tipback,rootback=map(Vector,fin)
  fn=(tipfront-rootfront).cross(tipback-rootfront).normalized()
- fv=[];spansteps=17;chordsteps=25
- for side in [-1,1]:
-  for j in range(spansteps):
-   h=j/(spansteps-1);front=rootfront.lerp(tipfront,h);back=rootback.lerp(tipback,h)
-   for k in range(chordsteps):
-    u=k/(chordsteps-1)
-    thickness=.006+(.052-.025*h)*math.sin(math.pi*u)**.8
-    fv.append(tuple(front.lerp(back,u)+fn*(side*thickness)))
- layer=spansteps*chordsteps;ff=[]
- for side in range(2):
-  for j in range(spansteps-1):
-   for k in range(chordsteps-1):
-    a=side*layer+j*chordsteps+k;ff.append((a,a+1,a+1+chordsteps,a+chordsteps))
- for j in range(spansteps-1):
-  for k in [0,chordsteps-1]:
-   a=j*chordsteps+k;b=a+chordsteps;ff.append((a,b,b+layer,a+layer))
- for j in [0,spansteps-1]:
-  for k in range(chordsteps-1):
-   a=j*chordsteps+k;ff.append((a,a+1,a+1+layer,a+layer))
- mesh('Outward canted vertical tail',fv,ff,skin,True)
+ def finpos(h,u,side):
+  front=rootfront.lerp(tipfront,h);back=rootback.lerp(tipback,h)
+  return front.lerp(back,u)+fn*(side*(.006+(.052-.025*h)*math.sin(math.pi*u)**.8))
+ # Rudder occupies the lower trailing edge; its hinge line runs from u .70 to .66.
+ R0,R1=.06,.62
+ rh=lambda h:.70+(.66-.70)*(h-R0)/(R1-R0)
+ lin=lambda a,b,n:[a+(b-a)*i/n for i in range(n+1)]
+ slab('Outward canted vertical tail',lin(0,R0,1),lambda h:(0,1),25,finpos,skin)
+ slab('Outward canted vertical tail',lin(R0,R1,9),lambda h:(0,rh(h)),20,finpos,skin)
+ slab('Outward canted vertical tail',lin(R1,1,6),lambda h:(0,1),25,finpos,skin)
+ tag='rudder_'+('L' if s<0 else 'R')
+ movable(tag,slab('Outward canted vertical tail rudder',lin(R0+.012,R1-.012,8),lambda h:(rh(h)+.008,1),7,finpos,skin))
+ a=rootfront.lerp(tipfront,R0).lerp(rootback.lerp(tipback,R0),rh(R0))
+ b=rootfront.lerp(tipfront,R1).lerp(rootback.lerp(tipback,R1),rh(R1))
+ hinge(tag,a,b-a)
  # Narrow leading-edge coating follows both sides of the actual airfoil.
  for side in [-1,1]:
   strip=[]
-  for j in range(spansteps):
-   h=j/(spansteps-1);front=rootfront.lerp(tipfront,h);back=rootback.lerp(tipback,h)
-   for u in [0,.035]:
-    d=.009+(.052-.025*h)*math.sin(math.pi*u)**.8
-    strip.append(tuple(front.lerp(back,u)+fn*(side*d)))
-  mesh('Vertical tail leading edge RAM',strip,[(2*j,2*j+1,2*j+3,2*j+2) for j in range(spansteps-1)],edge)
- # Rudder outline and formation lights on both faces of the actual fin surface.
- for side in [-1,1]:
-  def finpt(h,u):
-   front=rootfront.lerp(tipfront,h);back=rootback.lerp(tipback,h)
-   return tuple(front.lerp(back,u)+fn*(side*(.010+(.052-.025*h)*math.sin(math.pi*u)**.8)))
-  line('Rudder hinge',[finpt(.06,.70),finpt(.62,.66),finpt(.62,.995)],.008,seam)
-  line('Fin tip formation light',[finpt(.975,.20),finpt(.975,.46)],.016,formation)
+  for j in range(17):
+   h=j/16
+   for u in [0,.035]:strip.append(tuple(finpos(h,u,side)+fn*(side*.003)))
+  mesh('Vertical tail leading edge RAM',strip,[(2*j,2*j+1,2*j+3,2*j+2) for j in range(16)],edge)
+  line('Fin tip formation light',[tuple(finpos(.975,.20,side)+fn*(side*.004)),tuple(finpos(.975,.46,side)+fn*(side*.004))],.016,formation)
  # Texture-free stencil geometry: fictional SpearOne code, not a unit replica.
  origin=Vector(fin[0]);u=Vector((0,s,0))
  normal=(Vector(fin[1])-origin).cross(Vector(fin[2])-origin).normalized()
@@ -366,13 +383,28 @@ for o in list(bpy.context.scene.objects):
   colors.data[loop.index].color=(*( (a+(b-a)*blend)*wear for a,b in zip(lightgrey,darkgrey)),1)
 bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=next(iter(bpy.context.scene.objects));bpy.ops.object.convert(target='MESH')
 for m in list(bpy.data.materials):
- objs=[o for o in bpy.context.scene.objects if o.type=='MESH' and len(o.data.materials)==1 and o.data.materials[0]==m]
+ objs=[o for o in bpy.context.scene.objects if o.type=='MESH' and 'cs' not in o and len(o.data.materials)==1 and o.data.materials[0]==m]
  if not objs:continue
  bpy.ops.object.select_all(action='DESELECT')
  for o in objs:o.select_set(True)
  bpy.context.view_layer.objects.active=objs[0]
  if len(objs)>1:bpy.ops.object.join()
  objs[0].name='F22A / '+m.name
+# Each control surface becomes one node whose origin sits on its hinge and whose
+# local X axis is the hinge line, so the game rotates it about local X only.
+for tag,info in CS.items():
+ objs=[o for o in bpy.context.scene.objects if o.get('cs')==tag]
+ bpy.ops.object.select_all(action='DESELECT')
+ for o in objs:o.select_set(True)
+ bpy.context.view_layer.objects.active=objs[0]
+ if len(objs)>1:bpy.ops.object.join()
+ o=objs[0];o.name='CS_'+tag
+ x=info['axis'];ref=Vector((0,1,0)) if abs(x.y)<.9 else Vector((0,0,1))
+ z=x.cross(ref).normalized()
+ if z.z<0 and abs(x.z)<.7:z=-z
+ y=z.cross(x)
+ M=Matrix.Translation(info['origin'])@Matrix((x,y,z)).transposed().to_4x4()
+ o.data.transform(M.inverted());o.matrix_world=M
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,'kestrel.blend'))
 bpy.ops.export_scene.gltf(filepath=os.path.join(OUT,'kestrel.glb'),export_format='GLB',use_selection=True,export_yup=True)
